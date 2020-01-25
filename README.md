@@ -1,1 +1,2 @@
 # Bank_users_profile_analysis
+用机器学习的方法预测银行客户是否会存款。
