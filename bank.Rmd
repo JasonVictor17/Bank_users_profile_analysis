@@ -1,0 +1,196 @@
+---
+title: "银行客户画像分析"
+author: "Jason"
+date: "1/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Information about the dataset
+
+The dataset is from the website: http://archive.ics.uci.edu/ml/datasets/Bank+Marketing.
+
+The data is related with direct marketing campaigns (phone calls) of a Portuguese banking institution. The classification goal is to predict if the client will subscribe a term deposit (variable y). The data is related with direct marketing campaigns of a Portuguese banking institution. The marketing campaigns were based on phone calls. Often, more than one contact to the same client was required, in order to access if the product (bank term deposit) would be ('yes') or not ('no') subscribed.
+
+There are four datasets:
+1) bank-additional-full.csv with all examples (41188) and 20 inputs, ordered by date (from May 2008 to November 2010)
+2) bank-additional.csv with 10% of the examples (4119), randomly selected from 1), and 20 inputs.
+
+## Attribute Information:
+
+## Input variables:
+
+### bank client data:
+
+1 - **age** (numeric)
+
+2 - **job** : type of job (categorical:'admin.','blue-collar','entrepreneur','housemaid','management','retired','self-employed','services','student','technician','unemployed','unknown')
+
+3 - **marital** : marital status (categorical: 'divorced','married','single','unknown'; note: 'divorced' means divorced or widowed)
+
+4 - **education** (categorical: 'basic.4y','basic.6y','basic.9y','high.school','illiterate','professional.course','university.degree','unknown')
+
+5 - **default**: has credit in default? (categorical: 'no','yes','unknown')
+
+6 - **housing**: has housing loan? (categorical: 'no','yes','unknown')
+
+7 - **loan**: has personal loan? (categorical: 'no','yes','unknown')
+
+### related with the last contact of the current campaign:
+
+8 - **contact**: contact communication type (categorical: 'cellular','telephone')
+
+9 - **month**: last contact month of year (categorical: 'jan', 'feb', 'mar', ..., 'nov', 'dec')
+
+10 - **day_of_week**: last contact day of the week (categorical: 'mon','tue','wed','thu','fri')
+
+11 - **duration**: last contact duration, in seconds (numeric). Important note: this attribute highly affects the output target (e.g., if duration=0 then y='no'). Yet, the duration is not known before a call is performed. Also, after the end of the call y is obviously known. Thus, this input should only be included for benchmark purposes and should be discarded if the intention is to have a realistic predictive model.
+
+### other attributes:
+
+12 - **campaign**: number of contacts performed during this campaign and for this client (numeric, includes last contact)
+
+13 - **pdays**: number of days that passed by after the client was last contacted from a previous campaign (numeric; 999 means client was not previously contacted)
+
+14 - **previous**: number of contacts performed before this campaign and for this client (numeric)
+
+15 - **poutcome**: outcome of the previous marketing campaign (categorical: 'failure','nonexistent','success')
+
+### social and economic context attributes
+
+16 - **emp.var.rate**: employment variation rate - quarterly indicator (numeric)
+
+17 - **cons.price.idx**: consumer price index - monthly indicator (numeric)
+
+18 - **cons.conf.idx**: consumer confidence index - monthly indicator (numeric)
+
+19 - **euribor3m**: euribor 3 month rate - daily indicator (numeric)
+
+20 - **nr.employed**: number of employees - quarterly indicator (numeric)
+
+### Output variable (desired target):
+
+21 - **y** - has the client subscribed a term deposit? (binary: 'yes','no')
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(mice) # deal with missing values by serval regressions or cart
+library(VIM) # visualize missing values
+library(randomForest)
+library(rfUtilities)
+library(MLmetrics)
+library(MASS)
+library(corrplot) # visualize corrleation
+library(psych) # pca
+library(ggfortify) # visualize pca
+```
+
+```{r}
+dataset <- read.csv('C:/Users/jasonguo/Desktop/bank-additional/bank-additional-full.csv', sep=";")
+# 数据概况
+head(dataset,n=1)
+```
+
+
+```{r}
+# 数据的总结
+sprintf('变量数目: %d',length(dataset)-1)
+sprintf('样本数目: %d',41188)
+summary(dataset$y) # 选择定期存款的人
+```
+
+## 数据预处理
+
+```{r}
+# 去除 duration
+dataset <- subset(dataset, select=-c(duration))
+
+# 处理缺失数据
+dataset <- na_if(dataset,"unknown") # 转化为na
+sapply(dataset, function(x) sum(is.na(x))) # 多少na在每列
+```
+
+```{r}
+## 可视化分析
+miss_sample <- subset(dataset, select=c('default','education','housing','loan','job','marital')) # 选择有缺失值的
+miss_plot <- aggr(miss_sample, col=c('navyblue','yellow'),
+                  numbers=TRUE, sortVars=TRUE,
+                  labels=names(miss_sample), cex.axis=.7,
+                  cex.numbers=0.5, ylab=c("Missing data","Pattern"))
+```
+
+左边显示缺失比例和排序，右边显示缺失值的模式以及每种模式的概率大小,比如前两种同时都没有的比例是1.1%。分析发现人们对于是否以往有违约缄默其口，其次是学历情况.最后我发现未透露是否有房贷信息的人同样不愿意透露是否有个人贷款。
+
+```{r}
+# transform y into a dummy variable
+dataset<-dataset %>%
+  mutate(y = ifelse(y == "no",0,1))
+target <- dataset$y
+dataset <- subset(dataset, select=-c(y))
+```
+
+```{r}
+## 填补缺失值
+imputed_Data <- mice(dataset, m=5, maxit = 5, method = 'cart', seed = 500) # 选用 Classification and regression trees
+
+```
+
+一共五个新的dataset，全部进行数据预处理并且导出：
+```{r}
+processed_data <- c('processed_data1','processed_data2','processed_data3','processed_data4','processed_data5')
+for (i in c(1:5)){
+  completeData <- complete(imputed_Data,i)
+  # Numerical variables: age, campaign, pdays, previous, emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m, nr.employed  
+  # Normalize numerical variables: z-score 标准化
+  numer <- c('age','campaign','pdays','previous', 'emp.var.rate', 'cons.price.idx', 'cons.conf.idx', 'euribor3m', 'nr.employed')
+  for (each in numer){
+    temp <- scale(completeData [each])
+    completeData [each] <- temp
+  }
+  
+  # one-hot encoding category variables
+  cat <- c('job','marital','education','default','housing','loan','contact','month','day_of_week','poutcome')
+  for (each in cat){
+    temp <- model.matrix(formula(paste("~",each,-1)),completeData) %>% as.data.frame()   # one-hot encoding, paste for loops
+    completeData <- cbind(completeData, temp) # 合并
+  }
+  completeData <- completeData[, -match(cat,names(completeData)), drop=F] # 删除原有列
+  
+  # 去除全是0的列,因为已经被填补
+  zeros <- c('loanunknown','housingunknown','defaultunknown','educationunknown','maritalunknown','jobunknown')
+  completeData <- completeData[, -match(zeros,names(completeData)), drop=F] # 删除
+  
+  # 重命名一些列
+  names(completeData)<-make.names(names(completeData)) # 一些如“-”不合规
+    
+  assign(processed_data[i],completeData)
+  
+  }
+
+```
+
+Merge target
+
+```{r}
+processed_data1<-cbind(processed_data1, target)
+processed_data2<-cbind(processed_data2, target)
+processed_data3<-cbind(processed_data3, target)
+processed_data4<-cbind(processed_data4, target)
+processed_data5<-cbind(processed_data5, target)
+```
+
+写出所有
+```{r}
+write.csv(processed_data1, file = 'processed_data1.csv')
+write.csv(processed_data2, file = 'processed_data2.csv')
+write.csv(processed_data3, file = 'processed_data3.csv')
+write.csv(processed_data4, file = 'processed_data4.csv')
+write.csv(processed_data5, file = 'processed_data5.csv')
+
+```
+
+到这里数据预处理就完成了。。。接着继续分析。。。

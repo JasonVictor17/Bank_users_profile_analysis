@@ -1,7 +1,3 @@
-﻿---
-layout: false
----
-
 <!DOCTYPE html>
 
 <html>
@@ -552,6 +548,11 @@ miss_plot &lt;- aggr(miss_sample, col=c(&#39;navyblue&#39;,&#39;yellow&#39;),
 ##        job 0.008012042
 ##    marital 0.001942313</code></pre>
 <p>左边显示缺失比例和排序，右边显示缺失值的模式以及每种模式的概率大小,比如前两种同时都没有的比例是1.1%。分析发现人们对于是否以往有违约缄默其口，其次是学历情况.最后我发现未透露是否有房贷信息的人同样不愿意透露是否有个人贷款。</p>
+<pre class="r"><code># transform y into a dummy variable
+dataset&lt;-dataset %&gt;%
+  mutate(y = ifelse(y == &quot;no&quot;,0,1))
+target &lt;- dataset$y
+dataset &lt;- subset(dataset, select=-c(y))</code></pre>
 <pre class="r"><code>## 填补缺失值
 imputed_Data &lt;- mice(dataset, m=5, maxit = 5, method = &#39;cart&#39;, seed = 500) # 选用 Classification and regression trees</code></pre>
 <pre><code>## 
@@ -606,16 +607,18 @@ for (i in c(1:5)){
   zeros &lt;- c(&#39;loanunknown&#39;,&#39;housingunknown&#39;,&#39;defaultunknown&#39;,&#39;educationunknown&#39;,&#39;maritalunknown&#39;,&#39;jobunknown&#39;)
   completeData &lt;- completeData[, -match(zeros,names(completeData)), drop=F] # 删除
   
-  # transform y into a dummy variable
-  completeData&lt;-completeData %&gt;%
-    mutate(y = ifelse(y == &quot;no&quot;,0,1))
-  
   # 重命名一些列
   names(completeData)&lt;-make.names(names(completeData)) # 一些如“-”不合规
     
   assign(processed_data[i],completeData)
   
   }</code></pre>
+<p>Merge target</p>
+<pre class="r"><code>processed_data1&lt;-cbind(processed_data1, target)
+processed_data2&lt;-cbind(processed_data2, target)
+processed_data3&lt;-cbind(processed_data3, target)
+processed_data4&lt;-cbind(processed_data4, target)
+processed_data5&lt;-cbind(processed_data5, target)</code></pre>
 <p>写出所有</p>
 <pre class="r"><code>write.csv(processed_data1, file = &#39;processed_data1.csv&#39;)
 write.csv(processed_data2, file = &#39;processed_data2.csv&#39;)
